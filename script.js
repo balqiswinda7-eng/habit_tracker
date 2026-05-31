@@ -57,10 +57,11 @@ function initFullpage() {
   const container = $('fullpage-container');
   if (!container) return;
 
-  // IntersectionObserver for section activation
+  // IntersectionObserver for section activation — lower threshold on mobile
+  const isMobile = window.innerWidth <= 768;
   const observer = new IntersectionObserver((entries) => {
     entries.forEach(entry => {
-      if (entry.intersectionRatio >= 0.5) {
+      if (entry.intersectionRatio >= (isMobile ? 0.4 : 0.5)) {
         const pageIndex = parseInt(entry.target.dataset.page);
         currentPage = pageIndex;
         entry.target.classList.add('is-active');
@@ -69,7 +70,7 @@ function initFullpage() {
         );
       }
     });
-  }, { root: container, threshold: 0.5 });
+  }, { root: container, threshold: isMobile ? [0.4] : [0.5] });
 
   container.querySelectorAll('.fp-section').forEach(s => observer.observe(s));
 
@@ -78,12 +79,54 @@ function initFullpage() {
     dot.addEventListener('click', () => navToPage(parseInt(dot.dataset.target)));
   });
 
-  // Keyboard navigation
+  // Keyboard navigation (desktop)
   document.addEventListener('keydown', e => {
     if (document.querySelector('.sheet-overlay.open')) return;
     if (e.key === 'ArrowDown' || e.key === 'PageDown') navToPage(currentPage + 1);
     if (e.key === 'ArrowUp'   || e.key === 'PageUp')   navToPage(currentPage - 1);
   });
+
+  // ── Touch swipe for fullpage navigation (mobile) ──────────────────
+  // Only trigger when swiping on non-scrollable areas (hero, analytics header)
+  let fpTouchStartY = 0;
+  let fpTouchStartX = 0;
+  let fpLastScrollTop = 0;
+
+  container.addEventListener('touchstart', e => {
+    fpTouchStartY = e.touches[0].clientY;
+    fpTouchStartX = e.touches[0].clientX;
+    fpLastScrollTop = container.scrollTop;
+  }, { passive: true });
+
+  container.addEventListener('touchend', e => {
+    // Skip if bottom sheet is open
+    if (document.querySelector('.sheet-overlay.open')) return;
+
+    const deltaY = fpTouchStartY - e.changedTouches[0].clientY;
+    const deltaX = Math.abs(fpTouchStartX - e.changedTouches[0].clientX);
+
+    // Only respond to predominantly vertical swipes (not horizontal scroll)
+    if (deltaX > Math.abs(deltaY) * 0.7) return;
+
+    // Threshold: 40px swipe triggers page change
+    const SWIPE_THRESHOLD = 40;
+    if (Math.abs(deltaY) < SWIPE_THRESHOLD) return;
+
+    // Check if the current section's inner div is at the edge
+    const section = container.querySelectorAll('.fp-section')[currentPage];
+    const inner   = section?.querySelector('.fp-inner');
+
+    if (inner) {
+      const atTop    = inner.scrollTop <= 2;
+      const atBottom = inner.scrollTop + inner.clientHeight >= inner.scrollHeight - 2;
+
+      if (deltaY > 0 && !atBottom) return; // swiping up but content below
+      if (deltaY < 0 && !atTop) return;    // swiping down but content above
+    }
+
+    if (deltaY > 0) navToPage(currentPage + 1);
+    else            navToPage(currentPage - 1);
+  }, { passive: true });
 }
 
 /* ══════════════════════════════════════════════════════
@@ -168,12 +211,16 @@ function createFlower() {
 }
 
 function initFlowers() {
+  const isMobile = window.innerWidth <= 768;
+  const initialCount  = isMobile ? 4 : 8;
+  const spawnInterval = isMobile ? 3500 : 2200;
+
   // Initial burst
-  for (let i = 0; i < 8; i++) {
-    setTimeout(createFlower, i * 400);
+  for (let i = 0; i < initialCount; i++) {
+    setTimeout(createFlower, i * (isMobile ? 700 : 400));
   }
   // Continuous spawn
-  setInterval(createFlower, 2200);
+  setInterval(createFlower, spawnInterval);
 }
 
 /* ══════════════════════════════════════════════════════
@@ -681,7 +728,12 @@ function bindEvents() {
   $('btnResetPomo')?.addEventListener('click', resetPomodoro);
 
   $('mascot')?.addEventListener('click', () => {
-    const msgs = ['Semangat! 🔥','Kamu bisa! 🌸','Terus bergerak! 🐻','Jangan menyerah! ✨','You got this! 💖'];
+    const msgs = [
+      'Semangat! 🔥', 'Kamu bisa! 🌸', 'Terus bergerak! 🐻',
+      'Jangan menyerah! ✨', 'You got this! 💖',
+      'Aku percaya padamu! 🌷', 'Satu langkah lagi! 🎯',
+      'Keren banget! 💅', 'Proud of you! 🥹'
+    ];
     showToast(msgs[Math.floor(Math.random() * msgs.length)]);
   });
 }
@@ -709,7 +761,10 @@ let toastTimeout;
 function showToast(msg) {
   const el = $('toast'); if (!el) return;
   clearTimeout(toastTimeout);
-  el.textContent = msg; el.style.display = 'block';
+  el.textContent = msg;
+  el.style.display = 'block';
+  // Small haptic feedback on mobile (if supported)
+  if (navigator.vibrate) navigator.vibrate(40);
   toastTimeout = setTimeout(() => { el.style.display = 'none'; }, 2600);
 }
 
